@@ -117,22 +117,34 @@ class Page(DjangoObjectType):
         interfaces = (PageInterface,)
 
 
-def get_specific_page(id, slug, token, content_type=None):
+def get_specific_page(id, slug, url, token, content_type=None):
     """
     Get a spcecific page, also get preview if token is passed
     """
     page = None
     try:
+        # Query page based using id, slug, url
+        pages = WagtailPage.objects.live().public()
         if id:
-            page = WagtailPage.objects.live().public().specific().get(pk=id)
+            page = pages.get(id=id)
         elif slug:
-            page = WagtailPage.objects.live().public().specific().get(slug=slug)
+            page = pages.get(slug=slug)
+        elif url:
+            for matching_page in pages.filter(url_path__contains=url):
+                if matching_page.url.strip("/") == url.strip("/"):
+                    page = matching_page
+                    break
 
+        # Get specfic model instead of base page
+        page = page.specific
+
+        # If token provided then get draft/preview
         if token:
             if page:
                 page_type = type(page)
                 if hasattr(page_type, "get_page_from_preview_token"):
                     page = page_type.get_page_from_preview_token(token)
+
             elif content_type:
                 app_label, model = content_type.lower().split(".")
                 mdl = ContentType.objects.get(app_label=app_label, model=model)
@@ -155,6 +167,7 @@ def PagesQuery():
             PageInterface,
             id=graphene.Int(),
             slug=graphene.String(),
+            url=graphene.String(),
             token=graphene.String(),
             content_type=graphene.String(),
         )
@@ -170,6 +183,7 @@ def PagesQuery():
             return get_specific_page(
                 id=kwargs.get("id"),
                 slug=kwargs.get("slug"),
+                url=kwargs.get("url"),
                 token=kwargs.get("token"),
                 content_type=kwargs.get("content_type"),
             )
